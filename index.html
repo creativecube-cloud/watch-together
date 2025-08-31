@@ -451,7 +451,6 @@
         const newMovieOverlay = document.getElementById('new-movie-modal-overlay');
         const movieLinkInput = document.getElementById('movie-link-input');
         
-        // REVERTED: Get elements for file upload
         const subtitleFileInput = document.getElementById('subtitle-file-input');
         const uploadBtn = document.querySelector('.upload-btn');
         const fileNameSpan = document.getElementById('file-name');
@@ -487,7 +486,27 @@
             const videoElement = document.getElementById('video-player');
             player = new Plyr(videoElement);
 
-            // ONLY CHAT SYNC REMAINS
+            player.on('ready', () => {
+                loadingContainer.classList.add('hidden');
+            });
+            
+            player.on('error', () => {
+                loadingContainer.classList.add('hidden');
+                console.error('Player error loading video or subtitles. Please check the link.');
+            });
+
+            // NEW: Initial check for existing movie data in Firebase
+            sessionRef.once('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data && data.movie) {
+                    player.source = {
+                        type: 'video',
+                        sources: [{ src: data.movie, type: 'video/mp4' }],
+                        tracks: data.subtitle ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: data.subtitle, default: true }] : []
+                    };
+                }
+            });
+
             setupChatSync();
             
             console.log(`User selected: ${currentUser}`);
@@ -503,7 +522,6 @@
             newMovieOverlay.classList.add('hidden');
         });
 
-        // REVERTED: Event listener to handle the file upload button click
         uploadBtn.addEventListener('click', () => {
             subtitleFileInput.click();
         });
@@ -532,20 +550,25 @@
             
             clearChat();
 
-            // Handle the subtitle file locally
-            const tracks = [];
+            let subtitleUrl = null;
             if (subtitleFile) {
                 const subtitleBlob = new Blob([subtitleFile], { type: 'text/vtt' });
-                const subtitleUrl = URL.createObjectURL(subtitleBlob);
-                tracks.push({
-                    kind: 'captions',
-                    label: 'Uploaded Subtitle',
-                    src: subtitleUrl,
-                    default: true
-                });
+                subtitleUrl = URL.createObjectURL(subtitleBlob);
             }
 
-            // Load the movie and subtitle for the local user only
+            // NEW: Update Firebase with the new movie and subtitle links
+            sessionRef.set({
+                movie: movieLink,
+                subtitle: subtitleUrl,
+                lastAction: {
+                    user: currentUser,
+                    command: 'load',
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                }
+            });
+
+            // Load the movie and subtitle for the local user immediately
+            const tracks = subtitleUrl ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: subtitleUrl, default: true }] : [];
             player.source = {
                 type: 'video',
                 sources: [{ src: movieLink, type: 'video/mp4' }],
@@ -558,10 +581,6 @@
             fileNameSpan.textContent = 'No file chosen';
         });
 
-        // --- REAL-TIME VIDEO SYNCING IS DISABLED ---
-        // The setupFileSync function and all player event listeners have been removed.
-        // The app will no longer sync video or timestamp data via Firebase.
-        
         // --- CHAT LOGIC FUNCTIONS ---
         function setupChatSync() {
             database.ref('session_1/messages').on('child_added', (snapshot) => {
@@ -619,16 +638,6 @@
         }
 
         sendButton.addEventListener('click', sendMessage);
-
-        // Player event listeners to handle the loading screen
-        player.on('ready', () => {
-            loadingContainer.classList.add('hidden');
-        });
-        
-        player.on('error', () => {
-            loadingContainer.classList.add('hidden');
-            console.error('Player error loading video or subtitles. Please check the link.');
-        });
     </script>
 </body>
 </html>
