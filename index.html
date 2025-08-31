@@ -353,6 +353,9 @@
             40% { transform: scale(1); }
         }
     </style>
+    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
 <body>
 
@@ -416,8 +419,24 @@
         </div>
     </div>
 
-    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
     <script>
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDcm6rK2d8-rKqNuyfGpO-eI9Zvd5wf1IM",
+            authDomain: "watch-together-69825.firebaseapp.com",
+            databaseURL: "https://watch-together-69825-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "watch-together-69825",
+            storageBucket: "watch-together-69825.firebasestorage.app",
+            messagingSenderId: "640664049846",
+            appId: "1:640664049846:web:3f7813de9f6cb76a192e17"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        const sessionRef = database.ref('session_1');
+
+        // Main App Elements
         const userSelectModal = document.getElementById('user-select-modal');
         const userSelectOverlay = document.getElementById('user-select-modal-overlay');
         const btnK = document.getElementById('btn-k');
@@ -428,6 +447,7 @@
         const sendButton = document.getElementById('send-btn');
         const chatBox = document.getElementById('chat-box');
 
+        // New Movie Modal Elements
         const newMovieModal = document.getElementById('new-movie-modal');
         const newMovieOverlay = document.getElementById('new-movie-modal-overlay');
         const movieLinkInput = document.getElementById('movie-link-input');
@@ -438,10 +458,9 @@
         const cancelBtn = document.getElementById('cancel-btn');
         const loadingContainer = document.getElementById('loading-container');
         
-        const videoElement = document.getElementById('video-player');
-        const player = new Plyr(videoElement);
-
         let currentUser = null;
+        let isSeeking = false;
+        let player; // Declare the player variable here
 
         document.addEventListener('DOMContentLoaded', () => {
             userSelectModal.classList.remove('hidden');
@@ -449,6 +468,7 @@
             mainApp.classList.add('hidden');
         });
 
+        // User Selection Buttons
         btnK.addEventListener('click', () => {
             currentUser = 'K';
             transitionToMainApp();
@@ -463,6 +483,15 @@
             if (userSelectModal) { userSelectModal.remove(); }
             if (userSelectOverlay) { userSelectOverlay.remove(); }
             mainApp.classList.remove('hidden');
+
+            // Initialize the Plyr player ONLY after a user is selected
+            const videoElement = document.getElementById('video-player');
+            player = new Plyr(videoElement);
+
+            // Add all the real-time syncing event listeners
+            setupRealTimeSync();
+            setupChatSync();
+            
             console.log(`User selected: ${currentUser}`);
         }
 
@@ -497,54 +526,100 @@
                 return;
             }
 
-            // Hide the modal and show the loading animation
             newMovieModal.classList.add('hidden');
             newMovieOverlay.classList.add('hidden');
             loadingContainer.classList.remove('hidden');
 
-            const sources = [{ src: movieLink, type: 'video/mp4' }];
-            const tracks = [];
+            const getSubtitleURL = () => {
+                return new Promise(resolve => {
+                    if (subtitleFile) {
+                        const reader = new FileReader();
+                        reader.onload = event => {
+                            const subtitleBlob = new Blob([event.target.result], { type: 'text/vtt' });
+                            resolve(URL.createObjectURL(subtitleBlob));
+                        };
+                        reader.readAsText(subtitleFile);
+                    } else {
+                        resolve(null);
+                    }
+                });
+            };
 
-            if (subtitleFile) {
-                const reader = new FileReader();
-
-                reader.onload = function(event) {
-                    const subtitleContent = event.target.result;
-                    const subtitleBlob = new Blob([subtitleContent], { type: 'text/vtt' });
-                    const subtitleURL = URL.createObjectURL(subtitleBlob);
-                    
-                    tracks.push({
-                        kind: 'captions',
-                        label: 'Uploaded Subtitle',
-                        src: subtitleURL,
-                        default: true
-                    });
-                    
-                    player.source = {
-                        type: 'video',
-                        sources: sources,
-                        tracks: tracks
-                    };
-                };
-
-                reader.readAsText(subtitleFile);
-
-            } else {
-                player.source = {
-                    type: 'video',
-                    sources: sources
-                };
-            }
+            getSubtitleURL().then(subtitleURL => {
+                sessionRef.set({
+                    movie: movieLink,
+                    subtitle: subtitleURL,
+                    state: 'paused',
+                    timestamp: 0
+                });
+            });
             
-            // Clear input fields
             movieLinkInput.value = '';
             subtitleFileInput.value = '';
             fileNameSpan.textContent = 'No file chosen';
         });
 
-        player.on('ready', () => {
-            loadingContainer.classList.add('hidden');
-        });
+        // --- REAL-TIME SYNC LOGIC FUNCTIONS ---
+        function setupRealTimeSync() {
+            player.on('play', () => {
+                if (!isSeeking) {
+                    sessionRef.update({ state: 'playing', timestamp: player.currentTime });
+                }
+            });
+
+            player.on('pause', () => {
+                if (!isSeeking) {
+                    sessionRef.update({ state: 'paused', timestamp: player.currentTime });
+                }
+            });
+
+            player.on('seeked', () => {
+                isSeeking = false;
+                sessionRef.update({ timestamp: player.currentTime });
+            });
+
+            sessionRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    // Load the movie if it's new
+                    if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
+                        const tracks = data.subtitle ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: data.subtitle, default: true }] : [];
+                        player.source = {
+                            type: 'video',
+                            sources: [{ src: data.movie, type: 'video/mp4' }],
+                            tracks: tracks
+                        };
+                        loadingContainer.classList.remove('hidden');
+                    }
+
+                    // Sync playback state
+                    if (data.state === 'playing' && player.paused) {
+                        player.play();
+                    } else if (data.state === 'paused' && !player.paused) {
+                        player.pause();
+                    }
+
+                    // Sync video time
+                    const diff = Math.abs(data.timestamp - player.currentTime);
+                    if (diff > 2 && !isSeeking) {
+                        isSeeking = true;
+                        player.currentTime = data.timestamp;
+                    }
+                }
+            });
+
+            player.on('ready', () => {
+                loadingContainer.classList.add('hidden');
+            });
+        }
+        
+        // --- CHAT LOGIC FUNCTIONS ---
+        function setupChatSync() {
+            database.ref('session_1/messages').on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                renderMessage(message);
+            });
+        }
 
         function renderMessage(message) {
             const messageElement = document.createElement('div');
@@ -559,7 +634,7 @@
             
             const timestamp = document.createElement('span');
             timestamp.classList.add('chat-timestamp');
-            const date = new Date();
+            const date = new Date(message.timestamp);
             timestamp.textContent = date.getUTCHours().toString().padStart(2, '0') + ':' + date.getUTCMinutes().toString().padStart(2, '0');
             
             if (message.user === 'M') {
@@ -582,9 +657,9 @@
                 const message = {
                     user: currentUser,
                     text: messageText,
-                    timestamp: new Date().getTime()
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
                 };
-                renderMessage(message);
+                database.ref('session_1/messages').push(message);
                 messageInput.value = '';
             }
         }
