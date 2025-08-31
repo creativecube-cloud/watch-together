@@ -592,6 +592,8 @@
             
             player.on('ready', () => {
                 loadingContainer.classList.add('hidden');
+                // New: Clear the chat here, after the video is confirmed ready
+                clearChat();
             });
             
             player.on('error', () => {
@@ -599,20 +601,25 @@
                 console.error('Player error loading video or subtitles. Please check the link.');
             });
 
+            // New: Handle the Firebase listener more robustly
+            let isInitialLoad = true;
             sessionRef.on('value', (snapshot) => {
                 const data = snapshot.val();
-                if (data) {
-                    // Check if a new movie link is being loaded
-                    if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
-                        loadingContainer.classList.remove('hidden');
-                        const tracks = data.subtitle ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: data.subtitle, default: true }] : [];
-                        player.source = {
-                            type: 'video',
-                            sources: [{ src: data.movie, type: 'video/mp4' }],
-                            tracks: tracks
-                        };
-                    }
+                if (!data) return;
 
+                // Sync the video source if it's different
+                if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
+                    loadingContainer.classList.remove('hidden');
+                    const tracks = data.subtitle ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: data.subtitle, default: true }] : [];
+                    player.source = {
+                        type: 'video',
+                        sources: [{ src: data.movie, type: 'video/mp4' }],
+                        tracks: tracks
+                    };
+                }
+
+                // Wait for the video to be ready before trying to sync state
+                player.on('ready', () => {
                     const currentTime = player.currentTime;
                     const diff = Math.abs(data.timestamp - currentTime);
 
@@ -628,7 +635,7 @@
                         isSeeking = true;
                         player.currentTime = data.timestamp;
                     }
-                }
+                });
             });
         }
         
@@ -638,6 +645,12 @@
                 const message = snapshot.val();
                 renderMessage(message);
             });
+        }
+
+        // New function to clear the chat
+        function clearChat() {
+            database.ref('session_1/messages').remove();
+            chatBox.innerHTML = ''; // Clear chatbox visually
         }
 
         function renderMessage(message) {
