@@ -530,6 +530,7 @@
             newMovieOverlay.classList.add('hidden');
             loadingContainer.classList.remove('hidden');
 
+            // --- FIX STARTS HERE ---
             const getSubtitleURL = () => {
                 return new Promise(resolve => {
                     if (subtitleFile) {
@@ -546,6 +547,15 @@
             };
 
             getSubtitleURL().then(subtitleURL => {
+                // First, update the local player directly.
+                const tracks = subtitleURL ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: subtitleURL, default: true }] : [];
+                player.source = {
+                    type: 'video',
+                    sources: [{ src: movieLink, type: 'video/mp4' }],
+                    tracks: tracks
+                };
+
+                // Then, update Firebase to tell the other user.
                 sessionRef.set({
                     movie: movieLink,
                     subtitle: subtitleURL,
@@ -553,6 +563,7 @@
                     timestamp: 0
                 });
             });
+            // --- FIX ENDS HERE ---
             
             movieLinkInput.value = '';
             subtitleFileInput.value = '';
@@ -577,19 +588,28 @@
                 isSeeking = false;
                 sessionRef.update({ timestamp: player.currentTime });
             });
+            
+            player.on('ready', () => {
+                loadingContainer.classList.add('hidden');
+            });
+            
+            player.on('error', () => {
+                loadingContainer.classList.add('hidden');
+                console.error('Player error loading video or subtitles. Please check the link.');
+            });
 
             sessionRef.on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (data) {
-                    // Load the movie if it's new
+                    // Check if a new movie link is being loaded
                     if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
+                        loadingContainer.classList.remove('hidden');
                         const tracks = data.subtitle ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: data.subtitle, default: true }] : [];
                         player.source = {
                             type: 'video',
                             sources: [{ src: data.movie, type: 'video/mp4' }],
                             tracks: tracks
                         };
-                        loadingContainer.classList.remove('hidden');
                     }
 
                     // Sync playback state
@@ -606,10 +626,6 @@
                         player.currentTime = data.timestamp;
                     }
                 }
-            });
-
-            player.on('ready', () => {
-                loadingContainer.classList.add('hidden');
             });
         }
         
