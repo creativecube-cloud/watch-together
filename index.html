@@ -65,6 +65,7 @@
             flex-grow: 1;
             display: flex;
             flex-direction: column;
+            height: 100%; /* Ensure main content fills the view */
         }
         #video-container {
             width: 100%;
@@ -84,22 +85,23 @@
         #chat-container {
             display: flex;
             flex-direction: column;
-            flex-grow: 1;
+            flex-grow: 1; /* This will make it fill remaining space */
             padding: 10px;
+            min-height: 0; /* Prevents overflow */
         }
         #chat-box {
             border: none;
             padding: 15px;
-            height: 250px;
             overflow-y: scroll;
             margin-bottom: 10px;
             background-color: var(--chat-background);
             color: var(--light-text);
             font-size: 0.9rem;
-            flex-grow: 1;
-            transition: height 0.3s ease, padding 0.3s ease;
+            flex-grow: 1; /* Allow the chat messages to fill the container */
+            min-height: 0; /* Prevents chat box from pushing container */
         }
         .chat-box-hidden {
+            /* This class will no longer be used */
             height: 0 !important;
             padding: 0 !important;
             opacity: 0;
@@ -295,6 +297,7 @@
             color: var(--text-color);
             font-weight: bold;
             cursor: pointer;
+            display: block;
         }
 
         .file-upload-wrapper {
@@ -530,7 +533,6 @@
             newMovieOverlay.classList.add('hidden');
             loadingContainer.classList.remove('hidden');
 
-            // --- FIX STARTS HERE ---
             const getSubtitleURL = () => {
                 return new Promise(resolve => {
                     if (subtitleFile) {
@@ -563,7 +565,6 @@
                     timestamp: 0
                 });
             });
-            // --- FIX ENDS HERE ---
             
             movieLinkInput.value = '';
             subtitleFileInput.value = '';
@@ -612,6 +613,9 @@
                         };
                     }
 
+                    const currentTime = player.currentTime;
+                    const diff = Math.abs(data.timestamp - currentTime);
+
                     // Sync playback state
                     if (data.state === 'playing' && player.paused) {
                         player.play();
@@ -619,8 +623,7 @@
                         player.pause();
                     }
 
-                    // Sync video time
-                    const diff = Math.abs(data.timestamp - player.currentTime);
+                    // Only sync time if the difference is significant
                     if (diff > 2 && !isSeeking) {
                         isSeeking = true;
                         player.currentTime = data.timestamp;
@@ -681,22 +684,6 @@
         }
 
         sendButton.addEventListener('click', sendMessage);
-        messageInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') {
-                sendMessage();
-            }
-        });
-
-        messageInput.addEventListener('focus', () => {
-            chatBox.classList.add('chat-box-hidden');
-        });
-
-        messageInput.addEventListener('blur', () => {
-            setTimeout(() => {
-                chatBox.classList.remove('chat-box-hidden');
-                chatBox.scrollTop = chatBox.scrollHeight;
-            }, 100);
-        });
     </script>
 </body>
 </html>
