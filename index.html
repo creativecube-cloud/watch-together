@@ -65,7 +65,7 @@
             flex-grow: 1;
             display: flex;
             flex-direction: column;
-            height: 100%; /* Ensure main content fills the view */
+            height: 100%;
         }
         #video-container {
             width: 100%;
@@ -85,9 +85,9 @@
         #chat-container {
             display: flex;
             flex-direction: column;
-            flex-grow: 1; /* This will make it fill remaining space */
+            flex-grow: 1;
             padding: 10px;
-            min-height: 0; /* Prevents overflow */
+            min-height: 0;
         }
         #chat-box {
             border: none;
@@ -97,11 +97,10 @@
             background-color: var(--chat-background);
             color: var(--light-text);
             font-size: 0.9rem;
-            flex-grow: 1; /* Allow the chat messages to fill the container */
-            min-height: 0; /* Prevents chat box from pushing container */
+            flex-grow: 1;
+            min-height: 0;
         }
         .chat-box-hidden {
-            /* This class will no longer be used */
             height: 0 !important;
             padding: 0 !important;
             opacity: 0;
@@ -450,14 +449,13 @@
         const newMovieModal = document.getElementById('new-movie-modal');
         const newMovieOverlay = document.getElementById('new-movie-modal-overlay');
         const movieLinkInput = document.getElementById('movie-link-input');
-        // UPDATED: Use a link input instead of file input for subtitles
         const subtitleLinkInput = document.getElementById('subtitle-link-input');
         const startMovieBtn = document.getElementById('start-movie-btn');
         const cancelBtn = document.getElementById('cancel-btn');
         const loadingContainer = document.getElementById('loading-container');
         
         let currentUser = null;
-        let player; // Declare the player variable here
+        let player;
 
         document.addEventListener('DOMContentLoaded', () => {
             userSelectModal.classList.remove('hidden');
@@ -465,7 +463,6 @@
             mainApp.classList.add('hidden');
         });
 
-        // User Selection Buttons
         btnK.addEventListener('click', () => {
             currentUser = 'K';
             transitionToMainApp();
@@ -481,12 +478,11 @@
             if (userSelectOverlay) { userSelectOverlay.remove(); }
             mainApp.classList.remove('hidden');
 
-            // Initialize the Plyr player ONLY after a user is selected
             const videoElement = document.getElementById('video-player');
             player = new Plyr(videoElement);
 
-            // Add all the real-time syncing event listeners
-            setupRealTimeSync();
+            // SIMPLIFIED: Only listen for Firebase changes, don't write to it from player events
+            setupFileSync();
             setupChatSync();
             
             console.log(`User selected: ${currentUser}`);
@@ -504,7 +500,6 @@
 
         startMovieBtn.addEventListener('click', () => {
             const movieLink = movieLinkInput.value.trim();
-            // UPDATED: Get the subtitle link directly
             const subtitleLink = subtitleLinkInput.value.trim();
             
             if (!movieLink) {
@@ -516,22 +511,11 @@
             newMovieOverlay.classList.add('hidden');
             loadingContainer.classList.remove('hidden');
 
-            // UPDATED: Create the tracks array using the subtitle link
-            const tracks = subtitleLink ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: subtitleLink, default: true }] : [];
-
-            // First, update the local player directly.
-            player.source = {
-                type: 'video',
-                sources: [{ src: movieLink, type: 'video/mp4' }],
-                tracks: tracks
-            };
-
-            // Then, update Firebase to tell the other user.
+            // Send the movie and subtitle links to Firebase
+            // The other person's app will read this and load the movie
             sessionRef.set({
                 movie: movieLink,
                 subtitle: subtitleLink,
-                state: 'paused',
-                timestamp: 0,
                 lastAction: {
                     user: currentUser,
                     command: 'load',
@@ -543,71 +527,18 @@
             subtitleLinkInput.value = '';
         });
 
-        // --- REAL-TIME SYNC LOGIC FUNCTIONS ---
-        function setupRealTimeSync() {
-            // These event listeners update Firebase with the user's action
-            player.on('play', () => {
-                // REMOVED: isReceivingCommand check
-                sessionRef.update({
-                    state: 'playing',
-                    timestamp: player.currentTime,
-                    lastAction: {
-                        user: currentUser,
-                        command: 'play',
-                        timestamp: firebase.database.ServerValue.TIMESTAMP
-                    }
-                });
-            });
-
-            player.on('pause', () => {
-                // REMOVED: isReceivingCommand check
-                sessionRef.update({
-                    state: 'paused',
-                    timestamp: player.currentTime,
-                    lastAction: {
-                        user: currentUser,
-                        command: 'pause',
-                        timestamp: firebase.database.ServerValue.TIMESTAMP
-                    }
-                });
-            });
-
-            player.on('seeked', () => {
-                // REMOVED: isReceivingCommand check
-                sessionRef.update({
-                    timestamp: player.currentTime,
-                    lastAction: {
-                        user: currentUser,
-                        command: 'seek',
-                        timestamp: firebase.database.ServerValue.TIMESTAMP
-                    }
-                });
-            });
-            
-            player.on('ready', () => {
-                loadingContainer.classList.add('hidden');
-                clearChat();
-            });
-            
-            player.on('error', () => {
-                loadingContainer.classList.add('hidden');
-                console.error('Player error loading video or subtitles. Please check the link.');
-            });
-
-            // This is the core logic that receives updates and syncs the player
+        // --- SIMPLIFIED FILE SYNC LOGIC ---
+        function setupFileSync() {
             sessionRef.on('value', (snapshot) => {
                 const data = snapshot.val();
-                if (!data || !data.lastAction) return;
+                if (!data || !data.movie) return;
                 
-                // This check is the most important part of the sync logic.
-                // If the update was made by this user, ignore it to prevent feedback loops.
-                if (data.lastAction.user === currentUser) {
-                    return;
-                }
-
-                // Sync the video source if it's different
-                if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
+                // If a new movie link is available, load it.
+                // This check prevents the same movie from being reloaded repeatedly.
+                if (!player.source || data.movie !== player.source.sources[0].src) {
                     loadingContainer.classList.remove('hidden');
+                    clearChat();
+                    
                     const tracks = data.subtitle ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: data.subtitle, default: true }] : [];
                     player.source = {
                         type: 'video',
@@ -615,25 +546,16 @@
                         tracks: tracks
                     };
                 }
+            });
 
-                // Force the video to match the state of the database
-                if (data.state === 'playing') {
-                    player.play().catch(error => {
-                        console.error('Autoplay prevented. User interaction required.');
-                        // Fallback to update state if play fails, to keep UI in sync
-                        player.pause();
-                    });
-                } else if (data.state === 'paused') {
-                    player.pause();
-                }
-
-                // Sync time regardless of play/pause
-                const currentTime = player.currentTime;
-                const diff = Math.abs(data.timestamp - currentTime);
-                // UPDATED: Sync if the difference is greater than 0.5 seconds
-                if (diff > 0.5) {
-                    player.currentTime = data.timestamp;
-                }
+            // Player event listeners are removed to prevent syncing play/pause/seek
+            player.on('ready', () => {
+                loadingContainer.classList.add('hidden');
+            });
+            
+            player.on('error', () => {
+                loadingContainer.classList.add('hidden');
+                console.error('Player error loading video or subtitles. Please check the link.');
             });
         }
         
@@ -645,10 +567,9 @@
             });
         }
 
-        // New function to clear the chat
         function clearChat() {
             database.ref('session_1/messages').remove();
-            chatBox.innerHTML = ''; // Clear chatbox visually
+            chatBox.innerHTML = '';
         }
 
         function renderMessage(message) {
