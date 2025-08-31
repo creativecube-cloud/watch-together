@@ -399,12 +399,8 @@
                 <input type="url" id="movie-link-input" placeholder="Paste direct video link (e.g., from Dropbox) here...">
             </div>
             <div class="input-group">
-                <label for="subtitle-file-input">Subtitle:</label>
-                <div class="file-upload-wrapper">
-                    <input type="file" id="subtitle-file-input" accept=".vtt" class="hidden-input">
-                    <button type="button" class="upload-btn">Choose File</button>
-                    <span id="file-name" class="file-name">No file chosen</span>
-                </div>
+                <label for="subtitle-link-input">Subtitle Link (optional):</label>
+                <input type="url" id="subtitle-link-input" placeholder="Paste direct subtitle link here...">
             </div>
             <div class="button-container">
                 <button id="cancel-btn">Cancel</button>
@@ -454,15 +450,13 @@
         const newMovieModal = document.getElementById('new-movie-modal');
         const newMovieOverlay = document.getElementById('new-movie-modal-overlay');
         const movieLinkInput = document.getElementById('movie-link-input');
-        const subtitleFileInput = document.getElementById('subtitle-file-input');
-        const uploadBtn = document.querySelector('.upload-btn');
-        const fileNameSpan = document.getElementById('file-name');
+        // UPDATED: Use a link input instead of file input for subtitles
+        const subtitleLinkInput = document.getElementById('subtitle-link-input');
         const startMovieBtn = document.getElementById('start-movie-btn');
         const cancelBtn = document.getElementById('cancel-btn');
         const loadingContainer = document.getElementById('loading-container');
         
         let currentUser = null;
-        let isReceivingCommand = false;
         let player; // Declare the player variable here
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -508,21 +502,10 @@
             newMovieOverlay.classList.add('hidden');
         });
 
-        uploadBtn.addEventListener('click', () => {
-            subtitleFileInput.click();
-        });
-
-        subtitleFileInput.addEventListener('change', () => {
-            if (subtitleFileInput.files.length > 0) {
-                fileNameSpan.textContent = subtitleFileInput.files[0].name;
-            } else {
-                fileNameSpan.textContent = 'No file chosen';
-            }
-        });
-
         startMovieBtn.addEventListener('click', () => {
             const movieLink = movieLinkInput.value.trim();
-            const subtitleFile = subtitleFileInput.files[0];
+            // UPDATED: Get the subtitle link directly
+            const subtitleLink = subtitleLinkInput.value.trim();
             
             if (!movieLink) {
                 alert('Please enter a movie link.');
@@ -533,54 +516,38 @@
             newMovieOverlay.classList.add('hidden');
             loadingContainer.classList.remove('hidden');
 
-            const getSubtitleURL = () => {
-                return new Promise(resolve => {
-                    if (subtitleFile) {
-                        const reader = new FileReader();
-                        reader.onload = event => {
-                            const subtitleBlob = new Blob([event.target.result], { type: 'text/vtt' });
-                            resolve(URL.createObjectURL(subtitleBlob));
-                        };
-                        reader.readAsText(subtitleFile);
-                    } else {
-                        resolve(null);
-                    }
-                });
+            // UPDATED: Create the tracks array using the subtitle link
+            const tracks = subtitleLink ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: subtitleLink, default: true }] : [];
+
+            // First, update the local player directly.
+            player.source = {
+                type: 'video',
+                sources: [{ src: movieLink, type: 'video/mp4' }],
+                tracks: tracks
             };
 
-            getSubtitleURL().then(subtitleURL => {
-                // First, update the local player directly.
-                const tracks = subtitleURL ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: subtitleURL, default: true }] : [];
-                player.source = {
-                    type: 'video',
-                    sources: [{ src: movieLink, type: 'video/mp4' }],
-                    tracks: tracks
-                };
-
-                // Then, update Firebase to tell the other user.
-                sessionRef.set({
-                    movie: movieLink,
-                    subtitle: subtitleURL,
-                    state: 'paused',
-                    timestamp: 0,
-                    lastAction: {
-                        user: currentUser,
-                        command: 'load',
-                        timestamp: firebase.database.ServerValue.TIMESTAMP
-                    }
-                });
+            // Then, update Firebase to tell the other user.
+            sessionRef.set({
+                movie: movieLink,
+                subtitle: subtitleLink,
+                state: 'paused',
+                timestamp: 0,
+                lastAction: {
+                    user: currentUser,
+                    command: 'load',
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                }
             });
             
             movieLinkInput.value = '';
-            subtitleFileInput.value = '';
-            fileNameSpan.textContent = 'No file chosen';
+            subtitleLinkInput.value = '';
         });
 
         // --- REAL-TIME SYNC LOGIC FUNCTIONS ---
         function setupRealTimeSync() {
             // These event listeners update Firebase with the user's action
             player.on('play', () => {
-                if (isReceivingCommand) return; // Prevent loop
+                // REMOVED: isReceivingCommand check
                 sessionRef.update({
                     state: 'playing',
                     timestamp: player.currentTime,
@@ -593,7 +560,7 @@
             });
 
             player.on('pause', () => {
-                if (isReceivingCommand) return; // Prevent loop
+                // REMOVED: isReceivingCommand check
                 sessionRef.update({
                     state: 'paused',
                     timestamp: player.currentTime,
@@ -606,7 +573,7 @@
             });
 
             player.on('seeked', () => {
-                if (isReceivingCommand) return; // Prevent loop
+                // REMOVED: isReceivingCommand check
                 sessionRef.update({
                     timestamp: player.currentTime,
                     lastAction: {
@@ -632,13 +599,11 @@
                 const data = snapshot.val();
                 if (!data || !data.lastAction) return;
                 
+                // This check is the most important part of the sync logic.
                 // If the update was made by this user, ignore it to prevent feedback loops.
                 if (data.lastAction.user === currentUser) {
                     return;
                 }
-
-                // A new command is being received, set the flag.
-                isReceivingCommand = true;
 
                 // Sync the video source if it's different
                 if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
@@ -665,14 +630,10 @@
                 // Sync time regardless of play/pause
                 const currentTime = player.currentTime;
                 const diff = Math.abs(data.timestamp - currentTime);
-                if (diff > 2) {
+                // UPDATED: Sync if the difference is greater than 0.5 seconds
+                if (diff > 0.5) {
                     player.currentTime = data.timestamp;
                 }
-
-                // Reset the flag after a small delay to prevent loops
-                setTimeout(() => {
-                    isReceivingCommand = false;
-                }, 500);
             });
         }
         
