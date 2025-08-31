@@ -398,8 +398,12 @@
                 <input type="url" id="movie-link-input" placeholder="Paste direct video link (e.g., from Dropbox) here...">
             </div>
             <div class="input-group">
-                <label for="subtitle-link-input">Subtitle Link (optional):</label>
-                <input type="url" id="subtitle-link-input" placeholder="Paste direct subtitle link here...">
+                <label for="subtitle-file-input">Subtitle:</label>
+                <div class="file-upload-wrapper">
+                    <input type="file" id="subtitle-file-input" accept=".vtt" class="hidden-input">
+                    <button type="button" class="upload-btn">Choose File</button>
+                    <span id="file-name" class="file-name">No file chosen</span>
+                </div>
             </div>
             <div class="button-container">
                 <button id="cancel-btn">Cancel</button>
@@ -429,12 +433,10 @@
             appId: "1:640664049846:web:3f7813de9f6cb76a192e17"
         };
         
-        // Initialize Firebase
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
         const sessionRef = database.ref('session_1');
 
-        // Main App Elements
         const userSelectModal = document.getElementById('user-select-modal');
         const userSelectOverlay = document.getElementById('user-select-modal-overlay');
         const btnK = document.getElementById('btn-k');
@@ -445,11 +447,15 @@
         const sendButton = document.getElementById('send-btn');
         const chatBox = document.getElementById('chat-box');
 
-        // New Movie Modal Elements
         const newMovieModal = document.getElementById('new-movie-modal');
         const newMovieOverlay = document.getElementById('new-movie-modal-overlay');
         const movieLinkInput = document.getElementById('movie-link-input');
-        const subtitleLinkInput = document.getElementById('subtitle-link-input');
+        
+        // REVERTED: Get elements for file upload
+        const subtitleFileInput = document.getElementById('subtitle-file-input');
+        const uploadBtn = document.querySelector('.upload-btn');
+        const fileNameSpan = document.getElementById('file-name');
+
         const startMovieBtn = document.getElementById('start-movie-btn');
         const cancelBtn = document.getElementById('cancel-btn');
         const loadingContainer = document.getElementById('loading-container');
@@ -481,8 +487,7 @@
             const videoElement = document.getElementById('video-player');
             player = new Plyr(videoElement);
 
-            // SIMPLIFIED: Only listen for Firebase changes, don't write to it from player events
-            setupFileSync();
+            // ONLY CHAT SYNC REMAINS
             setupChatSync();
             
             console.log(`User selected: ${currentUser}`);
@@ -498,9 +503,23 @@
             newMovieOverlay.classList.add('hidden');
         });
 
+        // REVERTED: Event listener to handle the file upload button click
+        uploadBtn.addEventListener('click', () => {
+            subtitleFileInput.click();
+        });
+
+        subtitleFileInput.addEventListener('change', () => {
+            const file = subtitleFileInput.files[0];
+            if (file) {
+                fileNameSpan.textContent = file.name;
+            } else {
+                fileNameSpan.textContent = 'No file chosen';
+            }
+        });
+
         startMovieBtn.addEventListener('click', () => {
             const movieLink = movieLinkInput.value.trim();
-            const subtitleLink = subtitleLinkInput.value.trim();
+            const subtitleFile = subtitleFileInput.files[0];
             
             if (!movieLink) {
                 alert('Please enter a movie link.');
@@ -510,54 +529,38 @@
             newMovieModal.classList.add('hidden');
             newMovieOverlay.classList.add('hidden');
             loadingContainer.classList.remove('hidden');
-
-            // Send the movie and subtitle links to Firebase
-            // The other person's app will read this and load the movie
-            sessionRef.set({
-                movie: movieLink,
-                subtitle: subtitleLink,
-                lastAction: {
-                    user: currentUser,
-                    command: 'load',
-                    timestamp: firebase.database.ServerValue.TIMESTAMP
-                }
-            });
             
+            clearChat();
+
+            // Handle the subtitle file locally
+            const tracks = [];
+            if (subtitleFile) {
+                const subtitleBlob = new Blob([subtitleFile], { type: 'text/vtt' });
+                const subtitleUrl = URL.createObjectURL(subtitleBlob);
+                tracks.push({
+                    kind: 'captions',
+                    label: 'Uploaded Subtitle',
+                    src: subtitleUrl,
+                    default: true
+                });
+            }
+
+            // Load the movie and subtitle for the local user only
+            player.source = {
+                type: 'video',
+                sources: [{ src: movieLink, type: 'video/mp4' }],
+                tracks: tracks
+            };
+
+            // Reset input fields
             movieLinkInput.value = '';
-            subtitleLinkInput.value = '';
+            subtitleFileInput.value = '';
+            fileNameSpan.textContent = 'No file chosen';
         });
 
-        // --- SIMPLIFIED FILE SYNC LOGIC ---
-        function setupFileSync() {
-            sessionRef.on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (!data || !data.movie) return;
-                
-                // If a new movie link is available, load it.
-                // This check prevents the same movie from being reloaded repeatedly.
-                if (!player.source || data.movie !== player.source.sources[0].src) {
-                    loadingContainer.classList.remove('hidden');
-                    clearChat();
-                    
-                    const tracks = data.subtitle ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: data.subtitle, default: true }] : [];
-                    player.source = {
-                        type: 'video',
-                        sources: [{ src: data.movie, type: 'video/mp4' }],
-                        tracks: tracks
-                    };
-                }
-            });
-
-            // Player event listeners are removed to prevent syncing play/pause/seek
-            player.on('ready', () => {
-                loadingContainer.classList.add('hidden');
-            });
-            
-            player.on('error', () => {
-                loadingContainer.classList.add('hidden');
-                console.error('Player error loading video or subtitles. Please check the link.');
-            });
-        }
+        // --- REAL-TIME VIDEO SYNCING IS DISABLED ---
+        // The setupFileSync function and all player event listeners have been removed.
+        // The app will no longer sync video or timestamp data via Firebase.
         
         // --- CHAT LOGIC FUNCTIONS ---
         function setupChatSync() {
@@ -616,6 +619,16 @@
         }
 
         sendButton.addEventListener('click', sendMessage);
+
+        // Player event listeners to handle the loading screen
+        player.on('ready', () => {
+            loadingContainer.classList.add('hidden');
+        });
+        
+        player.on('error', () => {
+            loadingContainer.classList.add('hidden');
+            console.error('Player error loading video or subtitles. Please check the link.');
+        });
     </script>
 </body>
 </html>
