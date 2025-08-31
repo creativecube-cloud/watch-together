@@ -462,6 +462,7 @@
         const loadingContainer = document.getElementById('loading-container');
         
         let currentUser = null;
+        let isSeeking = false;
         let player; // Declare the player variable here
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -562,7 +563,11 @@
                     subtitle: subtitleURL,
                     state: 'paused',
                     timestamp: 0,
-                    lastAction: Date.now()
+                    lastAction: {
+                        user: currentUser,
+                        command: 'load',
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    }
                 });
             });
             
@@ -573,25 +578,40 @@
 
         // --- REAL-TIME SYNC LOGIC FUNCTIONS ---
         function setupRealTimeSync() {
-            // New: We will use the main Plyr play/pause buttons as the source of truth
-            const controlPlay = document.querySelector('.plyr__control--overlaid');
-            const controlPause = document.querySelector('[data-plyr="pause"]');
-            const controlRewind = document.querySelector('[data-plyr="rewind"]');
-            const controlFastForward = document.querySelector('[data-plyr="fast-forward"]');
+            // These event listeners update Firebase with the user's action
+            player.on('play', () => {
+                sessionRef.update({
+                    state: 'playing',
+                    timestamp: player.currentTime,
+                    lastAction: {
+                        user: currentUser,
+                        command: 'play',
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    }
+                });
+            });
 
-            controlPlay.addEventListener('click', () => {
-                sessionRef.update({ state: 'playing', timestamp: player.currentTime });
+            player.on('pause', () => {
+                sessionRef.update({
+                    state: 'paused',
+                    timestamp: player.currentTime,
+                    lastAction: {
+                        user: currentUser,
+                        command: 'pause',
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    }
+                });
             });
-            controlPause.addEventListener('click', () => {
-                sessionRef.update({ state: 'paused', timestamp: player.currentTime });
-            });
-            controlRewind.addEventListener('click', () => {
-                const newTime = Math.max(0, player.currentTime - 10);
-                sessionRef.update({ timestamp: newTime });
-            });
-            controlFastForward.addEventListener('click', () => {
-                const newTime = Math.min(player.duration, player.currentTime + 10);
-                sessionRef.update({ timestamp: newTime });
+
+            player.on('seeked', () => {
+                sessionRef.update({
+                    timestamp: player.currentTime,
+                    lastAction: {
+                        user: currentUser,
+                        command: 'seek',
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
+                    }
+                });
             });
             
             player.on('ready', () => {
@@ -607,8 +627,13 @@
             // This is the core logic that receives updates and syncs the player
             sessionRef.on('value', (snapshot) => {
                 const data = snapshot.val();
-                if (!data) return;
+                if (!data || !data.lastAction) return;
 
+                // Check if the update was made by this user. If so, ignore it.
+                if (data.lastAction.user === currentUser) {
+                    return;
+                }
+                
                 // Sync the video source if it's different
                 if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
                     loadingContainer.classList.remove('hidden');
@@ -621,9 +646,9 @@
                 }
 
                 // Force the video to match the state of the database
-                if (data.state === 'playing') {
+                if (data.state === 'playing' && player.paused) {
                     player.play();
-                } else if (data.state === 'paused') {
+                } else if (data.state === 'paused' && !player.paused) {
                     player.pause();
                 }
 
