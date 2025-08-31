@@ -573,26 +573,21 @@
 
         // --- REAL-TIME SYNC LOGIC FUNCTIONS ---
         function setupRealTimeSync() {
+            // New: This is the core logic change. It's now more defensive.
             player.on('play', () => {
-                if (!isSeeking) {
-                    sessionRef.update({ state: 'playing', timestamp: player.currentTime });
-                }
+                sessionRef.update({ state: 'playing', timestamp: player.currentTime });
             });
 
             player.on('pause', () => {
-                if (!isSeeking) {
-                    sessionRef.update({ state: 'paused', timestamp: player.currentTime });
-                }
+                sessionRef.update({ state: 'paused', timestamp: player.currentTime });
             });
 
             player.on('seeked', () => {
-                isSeeking = false;
                 sessionRef.update({ timestamp: player.currentTime });
             });
             
             player.on('ready', () => {
                 loadingContainer.classList.add('hidden');
-                // New: Clear the chat here, after the video is confirmed ready
                 clearChat();
             });
             
@@ -601,8 +596,6 @@
                 console.error('Player error loading video or subtitles. Please check the link.');
             });
 
-            // New: Handle the Firebase listener more robustly
-            let isInitialLoad = true;
             sessionRef.on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (!data) return;
@@ -618,24 +611,23 @@
                     };
                 }
 
-                // Wait for the video to be ready before trying to sync state
-                player.on('ready', () => {
-                    const currentTime = player.currentTime;
-                    const diff = Math.abs(data.timestamp - currentTime);
+                // Sync playback state only if it's different from the current state
+                const currentTime = player.currentTime;
+                const diff = Math.abs(data.timestamp - currentTime);
 
-                    // Sync playback state
-                    if (data.state === 'playing' && player.paused) {
-                        player.play();
-                    } else if (data.state === 'paused' && !player.paused) {
-                        player.pause();
-                    }
+                if (data.state === 'playing' && player.paused) {
+                    player.play();
+                } else if (data.state === 'paused' && !player.paused) {
+                    player.pause();
+                }
 
-                    // Only sync time if the difference is significant
-                    if (diff > 2 && !isSeeking) {
-                        isSeeking = true;
-                        player.currentTime = data.timestamp;
+                // Only sync time if the difference is significant and we are not in the process of seeking
+                if (diff > 2 && !isSeeking) {
+                    // Check if the timestamp is different enough to warrant a change
+                    if (Math.abs(data.timestamp - player.currentTime) > 1) {
+                         player.currentTime = data.timestamp;
                     }
-                });
+                }
             });
         }
         
