@@ -463,6 +463,7 @@
         
         let currentUser = null;
         let isSeeking = false;
+        let lastUpdateTime = Date.now();
         let player; // Declare the player variable here
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -573,16 +574,19 @@
 
         // --- REAL-TIME SYNC LOGIC FUNCTIONS ---
         function setupRealTimeSync() {
-            // New: This is the core logic change. It's now more defensive.
+            // These event listeners update Firebase
             player.on('play', () => {
+                lastUpdateTime = Date.now();
                 sessionRef.update({ state: 'playing', timestamp: player.currentTime });
             });
 
             player.on('pause', () => {
+                lastUpdateTime = Date.now();
                 sessionRef.update({ state: 'paused', timestamp: player.currentTime });
             });
 
             player.on('seeked', () => {
+                lastUpdateTime = Date.now();
                 sessionRef.update({ timestamp: player.currentTime });
             });
             
@@ -596,9 +600,16 @@
                 console.error('Player error loading video or subtitles. Please check the link.');
             });
 
+            // This is the core logic that receives updates and syncs the player
             sessionRef.on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (!data) return;
+
+                // Ignore updates that were just made by this device
+                const timeSinceLastUpdate = Date.now() - lastUpdateTime;
+                if (timeSinceLastUpdate < 500) {
+                    return;
+                }
 
                 // Sync the video source if it's different
                 if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
@@ -611,22 +622,18 @@
                     };
                 }
 
-                // Sync playback state only if it's different from the current state
-                const currentTime = player.currentTime;
-                const diff = Math.abs(data.timestamp - currentTime);
-
+                // Force the video to match the state of the database
                 if (data.state === 'playing' && player.paused) {
                     player.play();
                 } else if (data.state === 'paused' && !player.paused) {
                     player.pause();
                 }
 
-                // Only sync time if the difference is significant and we are not in the process of seeking
-                if (diff > 2 && !isSeeking) {
-                    // Check if the timestamp is different enough to warrant a change
-                    if (Math.abs(data.timestamp - player.currentTime) > 1) {
-                         player.currentTime = data.timestamp;
-                    }
+                // Sync time if the difference is significant
+                const currentTime = player.currentTime;
+                const diff = Math.abs(data.timestamp - currentTime);
+                if (diff > 2) {
+                    player.currentTime = data.timestamp;
                 }
             });
         }
