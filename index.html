@@ -462,8 +462,6 @@
         const loadingContainer = document.getElementById('loading-container');
         
         let currentUser = null;
-        let isSeeking = false;
-        let lastUpdateTime = Date.now();
         let player; // Declare the player variable here
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -563,7 +561,8 @@
                     movie: movieLink,
                     subtitle: subtitleURL,
                     state: 'paused',
-                    timestamp: 0
+                    timestamp: 0,
+                    lastAction: Date.now()
                 });
             });
             
@@ -574,20 +573,25 @@
 
         // --- REAL-TIME SYNC LOGIC FUNCTIONS ---
         function setupRealTimeSync() {
-            // These event listeners update Firebase
-            player.on('play', () => {
-                lastUpdateTime = Date.now();
+            // New: We will use the main Plyr play/pause buttons as the source of truth
+            const controlPlay = document.querySelector('.plyr__control--overlaid');
+            const controlPause = document.querySelector('[data-plyr="pause"]');
+            const controlRewind = document.querySelector('[data-plyr="rewind"]');
+            const controlFastForward = document.querySelector('[data-plyr="fast-forward"]');
+
+            controlPlay.addEventListener('click', () => {
                 sessionRef.update({ state: 'playing', timestamp: player.currentTime });
             });
-
-            player.on('pause', () => {
-                lastUpdateTime = Date.now();
+            controlPause.addEventListener('click', () => {
                 sessionRef.update({ state: 'paused', timestamp: player.currentTime });
             });
-
-            player.on('seeked', () => {
-                lastUpdateTime = Date.now();
-                sessionRef.update({ timestamp: player.currentTime });
+            controlRewind.addEventListener('click', () => {
+                const newTime = Math.max(0, player.currentTime - 10);
+                sessionRef.update({ timestamp: newTime });
+            });
+            controlFastForward.addEventListener('click', () => {
+                const newTime = Math.min(player.duration, player.currentTime + 10);
+                sessionRef.update({ timestamp: newTime });
             });
             
             player.on('ready', () => {
@@ -605,12 +609,6 @@
                 const data = snapshot.val();
                 if (!data) return;
 
-                // Ignore updates that were just made by this device
-                const timeSinceLastUpdate = Date.now() - lastUpdateTime;
-                if (timeSinceLastUpdate < 500) {
-                    return;
-                }
-
                 // Sync the video source if it's different
                 if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
                     loadingContainer.classList.remove('hidden');
@@ -623,9 +621,9 @@
                 }
 
                 // Force the video to match the state of the database
-                if (data.state === 'playing' && player.paused) {
+                if (data.state === 'playing') {
                     player.play();
-                } else if (data.state === 'paused' && !player.paused) {
+                } else if (data.state === 'paused') {
                     player.pause();
                 }
 
