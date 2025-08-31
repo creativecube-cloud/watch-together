@@ -462,7 +462,7 @@
         const loadingContainer = document.getElementById('loading-container');
         
         let currentUser = null;
-        let isSeeking = false;
+        let isReceivingCommand = false;
         let player; // Declare the player variable here
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -580,6 +580,7 @@
         function setupRealTimeSync() {
             // These event listeners update Firebase with the user's action
             player.on('play', () => {
+                if (isReceivingCommand) return; // Prevent loop
                 sessionRef.update({
                     state: 'playing',
                     timestamp: player.currentTime,
@@ -592,6 +593,7 @@
             });
 
             player.on('pause', () => {
+                if (isReceivingCommand) return; // Prevent loop
                 sessionRef.update({
                     state: 'paused',
                     timestamp: player.currentTime,
@@ -604,6 +606,7 @@
             });
 
             player.on('seeked', () => {
+                if (isReceivingCommand) return; // Prevent loop
                 sessionRef.update({
                     timestamp: player.currentTime,
                     lastAction: {
@@ -628,12 +631,15 @@
             sessionRef.on('value', (snapshot) => {
                 const data = snapshot.val();
                 if (!data || !data.lastAction) return;
-
-                // Check if the update was made by this user. If so, ignore it.
+                
+                // If the update was made by this user, ignore it to prevent feedback loops.
                 if (data.lastAction.user === currentUser) {
                     return;
                 }
-                
+
+                // A new command is being received, set the flag.
+                isReceivingCommand = true;
+
                 // Sync the video source if it's different
                 if (data.movie && (!player.source || data.movie !== player.source.sources[0].src)) {
                     loadingContainer.classList.remove('hidden');
@@ -646,18 +652,27 @@
                 }
 
                 // Force the video to match the state of the database
-                if (data.state === 'playing' && player.paused) {
-                    player.play();
-                } else if (data.state === 'paused' && !player.paused) {
+                if (data.state === 'playing') {
+                    player.play().catch(error => {
+                        console.error('Autoplay prevented. User interaction required.');
+                        // Fallback to update state if play fails, to keep UI in sync
+                        player.pause();
+                    });
+                } else if (data.state === 'paused') {
                     player.pause();
                 }
 
-                // Sync time if the difference is significant
+                // Sync time regardless of play/pause
                 const currentTime = player.currentTime;
                 const diff = Math.abs(data.timestamp - currentTime);
                 if (diff > 2) {
                     player.currentTime = data.timestamp;
                 }
+
+                // Reset the flag after a small delay to prevent loops
+                setTimeout(() => {
+                    isReceivingCommand = false;
+                }, 500);
             });
         }
         
