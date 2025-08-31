@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Watch Together</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+    <style>
+        :root {
+            --background: black;
+            --container-bg: black;
+            --chat-background: black;
+            --modal-bg: #1a1a2e;
+            --text-color: #f0f0f0;
+            --light-text: #c0c0d9;
+            --m-chat-bubble: #59113e;
+            --k-chat-bubble: #171c3d;
+            --button-color: #36195B;
+            --accent-color: #551e73;
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: 'Poppins', sans-serif;
+            color: var(--text-color);
+            background-color: var(--background);
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+        h1, h2 {
+            color: var(--accent-color);
+            text-align: center;
+            font-family: 'Quicksand', sans-serif;
+            font-weight: 700;
+        }
+        h1 { font-size: 2.5rem; }
+        h2 { 
+            font-size: 1.8rem; 
+            margin-bottom: 10px;
+        }
+        .main-content {
+            background-color: var(--container-bg);
+            padding: 0;
+            border-radius: 0;
+            box-shadow: none;
+            margin-bottom: 0;
+            border: none;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        #video-container {
+            width: 100%;
+            padding-top: 56.25%;
+            position: relative;
+            background-color: black;
+            border-radius: 0;
+            border: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--light-text);
+            font-size: 1.2rem;
+            text-align: center;
+            flex-grow: 1;
+        }
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            padding: 10px;
+        }
+        #chat-box {
+            border: none;
+            padding: 15px;
+            height: 250px;
+            overflow-y: scroll;
+            margin-bottom: 10px;
+            background-color: var(--chat-background);
+            color: var(--light-text);
+            font-size: 0.9rem;
+            flex-grow: 1;
+            transition: height 0.3s ease, padding 0.3s ease;
+        }
+        .chat-box-hidden {
+            height: 0 !important;
+            padding: 0 !important;
+            opacity: 0;
+        }
+        .chat-message {
+            margin: 10px 0;
+            display: flex;
+            align-items: flex-end;
+            word-wrap: break-word;
+        }
+        .chat-bubble {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 18px;
+            color: white;
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            word-wrap: break-word;
+        }
+        .chat-bubble .message-text {
+            word-wrap: break-word;
+            margin-right: 8px;
+        }
+        .chat-timestamp {
+            font-size: 0.65rem;
+            color: rgba(255, 255, 255, 0.7);
+            white-space: nowrap;
+        }
+        .chat-bubble.m-bubble { background-color: var(--m-chat-bubble); }
+        .chat-bubble.k-bubble { background-color: var(--k-chat-bubble); }
+        .chat-message { justify-content: flex-start; }
+        
+        #chat-input-area { 
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        #chat-input-area input {
+            flex-grow: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            background-color: #2a2a4c;
+            color: var(--text-color);
+            font-size: 1rem;
+            transition: border-color 0.2s;
+            margin-right: 10px;
+        }
+        #chat-input-area input:focus { 
+            outline: none; 
+            box-shadow: 0 0 5px var(--accent-color);
+        }
+        
+        #chat-input-area button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            background-color: var(--button-color);
+            color: var(--text-color);
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 99;
+        }
+        .modal-content {
+            background-color: black;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: none;
+            text-align: center;
+            border: none;
+            max-width: 450px;
+            width: 90%;
+            z-index: 101;
+            position: relative;
+        }
+        .modal-content h1 {
+            color: var(--text-color);
+        }
+        .modal-content .button-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        .modal-content button {
+            padding: 12px 20px;
+            width: 120px;
+            margin: 0;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: none;
+            box-shadow: none;
+        }
+        .modal-content button#btn-k {
+            background-color: var(--k-chat-bubble);
+        }
+        .modal-content button#btn-m {
+            background-color: var(--m-chat-bubble);
+        }
+        
+        #new-movie-modal .modal-content {
+            background-color: var(--modal-bg);
+            text-align: left;
+        }
+        #new-movie-modal h2 {
+            text-align: center;
+            color: var(--text-color);
+            margin-bottom: 25px;
+        }
+        #new-movie-modal .input-group {
+            margin-bottom: 20px;
+        }
+        #new-movie-modal label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: var(--light-text);
+        }
+        #new-movie-modal input {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            background-color: #2a2a4c;
+            color: var(--text-color);
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        #new-movie-modal input:focus {
+            outline: none;
+            box-shadow: 0 0 5px var(--accent-color);
+        }
+        #new-movie-modal .button-container {
+            display: flex;
+            justify-content: flex-end;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        #new-movie-modal button {
+            width: auto;
+            min-width: 80px;
+        }
+        #new-movie-modal #start-movie-btn {
+            background-color: var(--m-chat-bubble);
+        }
+        #new-movie-modal #cancel-btn {
+            background-color: transparent;
+            color: var(--light-text);
+        }
+        #video-player {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            object-fit: contain;
+        }
+        .hidden { display: none; }
+        .center-text { text-align: center; }
+        
+        #new-movie-button {
+            margin: 0 auto 30px;
+            width: auto;
+            padding: 15px 30px;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 6px;
+            background-color: var(--button-color);
+            color: var(--text-color);
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .file-upload-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .hidden-input {
+            display: none;
+        }
+        .upload-btn {
+            background-color: #2a2a4c;
+            color: var(--light-text);
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .upload-btn:hover {
+            background-color: #36365c;
+        }
+        .file-name {
+            font-size: 0.9rem;
+            color: var(--light-text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .loading-content {
+            background: transparent;
+            box-shadow: none;
+        }
+        .loading-dots {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 50px;
+        }
+        .loading-dots span {
+            display: block;
+            width: 10px;
+            height: 10px;
+            background-color: var(--accent-color);
+            border-radius: 50%;
+            margin: 0 5px;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+        .loading-dots span:nth-child(3) { animation-delay: 0s; }
+        
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container main-content hidden" id="main-app">
+        <div id="video-container">
+            <video id="video-player" playsinline controls data-plyr-config='{"title": "Watch Together Movie", "controls": ["play-large", "play", "progress", "current-time", "mute", "volume", "rewind", "fast-forward", "captions", "airplay", "fullscreen"]}'>
+            </video>
+        </div>
+        <div id="chat-container">
+            <div id="chat-box"></div>
+            <div id="chat-input-area">
+                <input type="text" id="message-input" placeholder="Start typing...">
+                <button id="send-btn">Send</button>
+            </div>
+        </div>
+        <div class="center-text">
+            <button id="new-movie-button">Start a New Movie</button>
+        </div>
+    </div>
+
+    <div id="user-select-modal-overlay" class="modal-overlay"></div>
+    <div id="user-select-modal" class="modal">
+        <div class="modal-content">
+            <h1>Who's Watching?</h1>
+            <div class="button-container">
+                <button id="btn-k">K</button>
+                <button id="btn-m">M</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="new-movie-modal-overlay" class="modal-overlay hidden"></div>
+    <div id="new-movie-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Start a New Movie</h2>
+            <div class="input-group">
+                <label for="movie-link-input">Movie Link:</label>
+                <input type="url" id="movie-link-input" placeholder="Paste direct video link (e.g., from Dropbox) here...">
+            </div>
+            <div class="input-group">
+                <label for="subtitle-file-input">Subtitle:</label>
+                <div class="file-upload-wrapper">
+                    <input type="file" id="subtitle-file-input" accept=".vtt" class="hidden-input">
+                    <button type="button" class="upload-btn">Choose File</button>
+                    <span id="file-name" class="file-name">No file chosen</span>
+                </div>
+            </div>
+            <div class="button-container">
+                <button id="cancel-btn">Cancel</button>
+                <button id="start-movie-btn">Start</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading-container" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content loading-content">
+            <div class="loading-dots">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
+    <script>
+        const userSelectModal = document.getElementById('user-select-modal');
+        const userSelectOverlay = document.getElementById('user-select-modal-overlay');
+        const btnK = document.getElementById('btn-k');
+        const btnM = document.getElementById('btn-m');
+        const mainApp = document.getElementById('main-app');
+        const newMessageBtn = document.getElementById('new-movie-button');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-btn');
+        const chatBox = document.getElementById('chat-box');
+
+        const newMovieModal = document.getElementById('new-movie-modal');
+        const newMovieOverlay = document.getElementById('new-movie-modal-overlay');
+        const movieLinkInput = document.getElementById('movie-link-input');
+        const subtitleFileInput = document.getElementById('subtitle-file-input');
+        const uploadBtn = document.querySelector('.upload-btn');
+        const fileNameSpan = document.getElementById('file-name');
+        const startMovieBtn = document.getElementById('start-movie-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const loadingContainer = document.getElementById('loading-container');
+        
+        const videoElement = document.getElementById('video-player');
+        const player = new Plyr(videoElement);
+
+        let currentUser = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            userSelectModal.classList.remove('hidden');
+            userSelectOverlay.classList.remove('hidden');
+            mainApp.classList.add('hidden');
+        });
+
+        btnK.addEventListener('click', () => {
+            currentUser = 'K';
+            transitionToMainApp();
+        });
+
+        btnM.addEventListener('click', () => {
+            currentUser = 'M';
+            transitionToMainApp();
+        });
+
+        function transitionToMainApp() {
+            if (userSelectModal) { userSelectModal.remove(); }
+            if (userSelectOverlay) { userSelectOverlay.remove(); }
+            mainApp.classList.remove('hidden');
+            console.log(`User selected: ${currentUser}`);
+        }
+
+        newMessageBtn.addEventListener('click', () => {
+            newMovieModal.classList.remove('hidden');
+            newMovieOverlay.classList.remove('hidden');
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            newMovieModal.classList.add('hidden');
+            newMovieOverlay.classList.add('hidden');
+        });
+
+        uploadBtn.addEventListener('click', () => {
+            subtitleFileInput.click();
+        });
+
+        subtitleFileInput.addEventListener('change', () => {
+            if (subtitleFileInput.files.length > 0) {
+                fileNameSpan.textContent = subtitleFileInput.files[0].name;
+            } else {
+                fileNameSpan.textContent = 'No file chosen';
+            }
+        });
+
+        startMovieBtn.addEventListener('click', () => {
+            const movieLink = movieLinkInput.value.trim();
+            const subtitleFile = subtitleFileInput.files[0];
+            
+            if (!movieLink) {
+                alert('Please enter a movie link.');
+                return;
+            }
+
+            // Hide the modal and show the loading animation
+            newMovieModal.classList.add('hidden');
+            newMovieOverlay.classList.add('hidden');
+            loadingContainer.classList.remove('hidden');
+
+            const sources = [{ src: movieLink, type: 'video/mp4' }];
+            const tracks = [];
+
+            if (subtitleFile) {
+                const reader = new FileReader();
+
+                reader.onload = function(event) {
+                    const subtitleContent = event.target.result;
+                    const subtitleBlob = new Blob([subtitleContent], { type: 'text/vtt' });
+                    const subtitleURL = URL.createObjectURL(subtitleBlob);
+                    
+                    tracks.push({
+                        kind: 'captions',
+                        label: 'Uploaded Subtitle',
+                        src: subtitleURL,
+                        default: true
+                    });
+                    
+                    player.source = {
+                        type: 'video',
+                        sources: sources,
+                        tracks: tracks
+                    };
+                };
+
+                reader.readAsText(subtitleFile);
+
+            } else {
+                player.source = {
+                    type: 'video',
+                    sources: sources
+                };
+            }
+            
+            // Clear input fields
+            movieLinkInput.value = '';
+            subtitleFileInput.value = '';
+            fileNameSpan.textContent = 'No file chosen';
+        });
+
+        player.on('ready', () => {
+            loadingContainer.classList.add('hidden');
+        });
+
+        function renderMessage(message) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('chat-message');
+            
+            const chatBubble = document.createElement('div');
+            chatBubble.classList.add('chat-bubble');
+            
+            const messageText = document.createElement('span');
+            messageText.classList.add('message-text');
+            messageText.textContent = message.text;
+            
+            const timestamp = document.createElement('span');
+            timestamp.classList.add('chat-timestamp');
+            const date = new Date();
+            timestamp.textContent = date.getUTCHours().toString().padStart(2, '0') + ':' + date.getUTCMinutes().toString().padStart(2, '0');
+            
+            if (message.user === 'M') {
+                chatBubble.classList.add('m-bubble');
+            } else if (message.user === 'K') {
+                chatBubble.classList.add('k-bubble');
+            }
+            
+            chatBubble.appendChild(messageText);
+            chatBubble.appendChild(timestamp);
+            messageElement.appendChild(chatBubble);
+            chatBox.appendChild(messageElement);
+
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function sendMessage() {
+            const messageText = messageInput.value.trim();
+            if (messageText && currentUser) {
+                const message = {
+                    user: currentUser,
+                    text: messageText,
+                    timestamp: new Date().getTime()
+                };
+                renderMessage(message);
+                messageInput.value = '';
+            }
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        messageInput.addEventListener('focus', () => {
+            chatBox.classList.add('chat-box-hidden');
+        });
+
+        messageInput.addEventListener('blur', () => {
+            setTimeout(() => {
+                chatBox.classList.remove('chat-box-hidden');
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }, 100);
+        });
+    </script>
+</body>
+</html>
