@@ -354,6 +354,16 @@
             0%, 80%, 100% { transform: scale(0); }
             40% { transform: scale(1); }
         }
+
+        /* NEW: Styles for the movie title */
+        #movie-title-container {
+            text-align: center;
+            padding: 20px 0 10px;
+        }
+        #movie-title-container h2 {
+            margin: 0;
+            color: var(--text-color);
+        }
     </style>
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -362,6 +372,10 @@
 <body>
 
     <div class="container main-content hidden" id="main-app">
+        <div id="movie-title-container">
+            <h2 id="movie-title"></h2>
+        </div>
+        
         <div id="video-container">
             <video id="video-player" playsinline controls data-plyr-config='{"title": "Watch Together Movie", "controls": ["play-large", "play", "progress", "current-time", "mute", "volume", "rewind", "fast-forward", "captions", "airplay", "fullscreen"]}'>
             </video>
@@ -459,8 +473,14 @@
         const cancelBtn = document.getElementById('cancel-btn');
         const loadingContainer = document.getElementById('loading-container');
         
+        // NEW: Reference to the movie title element
+        const movieTitle = document.getElementById('movie-title');
+        
         let currentUser = null;
         let player;
+        
+        const playbackRef = database.ref('session_1/playback');
+        let isUpdating = false;
 
         document.addEventListener('DOMContentLoaded', () => {
             userSelectModal.classList.remove('hidden');
@@ -477,6 +497,29 @@
             currentUser = 'M';
             transitionToMainApp();
         });
+        
+        // NEW: Function to extract and set the movie title
+        function updateMovieTitle(movieLink) {
+            try {
+                const url = new URL(movieLink);
+                const pathSegments = url.pathname.split('/');
+                let fileName = pathSegments[pathSegments.length - 1];
+                
+                // Clean up filename (remove extensions, years, etc.)
+                fileName = decodeURIComponent(fileName); // Decode URL-encoded characters
+                fileName = fileName.replace(/\.[^/.]+$/, ""); // Remove file extension
+                fileName = fileName.replace(/\.[0-9]{4}.*/, ""); // Remove year and subsequent text
+                fileName = fileName.replace(/[-_.]/g, " "); // Replace dots, underscores, hyphens with spaces
+                
+                // Capitalize each word
+                fileName = fileName.toLowerCase().split(' ').map((s) => s.charAt(0).toUpperCase() + s.substring(1)).join(' ');
+                
+                movieTitle.textContent = fileName.trim() || 'Now Playing';
+            } catch (error) {
+                movieTitle.textContent = 'Now Playing';
+                console.error('Failed to parse movie URL:', error);
+            }
+        }
 
         function transitionToMainApp() {
             if (userSelectModal) { userSelectModal.remove(); }
@@ -495,7 +538,6 @@
                 console.error('Player error loading video or subtitles. Please check the link.');
             });
 
-            // NEW: Initial check for existing movie data in Firebase
             sessionRef.once('value', (snapshot) => {
                 const data = snapshot.val();
                 if (data && data.movie) {
@@ -504,7 +546,64 @@
                         sources: [{ src: data.movie, type: 'video/mp4' }],
                         tracks: data.subtitle ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: data.subtitle, default: true }] : []
                     };
+                    // NEW: Update title on load
+                    updateMovieTitle(data.movie);
                 }
+            });
+            
+            playbackRef.on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data && !isUpdating) {
+                    const { state, timestamp, updatedBy } = data;
+                    
+                    console.log(`Syncing from database. State: ${state}, Timestamp: ${timestamp}. Last updated by: ${updatedBy}`);
+
+                    const timeDifference = Math.abs(player.currentTime - timestamp);
+                    if (timeDifference > 1) {
+                        player.currentTime = timestamp;
+                    }
+
+                    if (state === 'playing' && player.paused) {
+                        player.play();
+                    } else if (state === 'paused' && !player.paused) {
+                        player.pause();
+                    }
+                }
+            });
+
+            player.on('play', () => {
+                isUpdating = true;
+                playbackRef.set({
+                    state: 'playing',
+                    timestamp: player.currentTime,
+                    updatedBy: currentUser,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                }).then(() => {
+                    isUpdating = false;
+                });
+            });
+
+            player.on('pause', () => {
+                isUpdating = true;
+                playbackRef.set({
+                    state: 'paused',
+                    timestamp: player.currentTime,
+                    updatedBy: currentUser,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                }).then(() => {
+                    isUpdating = false;
+                });
+            });
+
+            player.on('seeked', () => {
+                isUpdating = true;
+                playbackRef.update({
+                    timestamp: player.currentTime,
+                    updatedBy: currentUser,
+                    updatedAt: firebase.database.ServerValue.TIMESTAMP
+                }).then(() => {
+                    isUpdating = false;
+                });
             });
 
             setupChatSync();
@@ -556,7 +655,6 @@
                 subtitleUrl = URL.createObjectURL(subtitleBlob);
             }
 
-            // NEW: Update Firebase with the new movie and subtitle links
             sessionRef.set({
                 movie: movieLink,
                 subtitle: subtitleUrl,
@@ -567,7 +665,6 @@
                 }
             });
 
-            // Load the movie and subtitle for the local user immediately
             const tracks = subtitleUrl ? [{ kind: 'captions', label: 'Uploaded Subtitle', src: subtitleUrl, default: true }] : [];
             player.source = {
                 type: 'video',
@@ -575,13 +672,14 @@
                 tracks: tracks
             };
 
-            // Reset input fields
+            // NEW: Update title after a new movie is started
+            updateMovieTitle(movieLink);
+
             movieLinkInput.value = '';
             subtitleFileInput.value = '';
             fileNameSpan.textContent = 'No file chosen';
         });
 
-        // --- CHAT LOGIC FUNCTIONS ---
         function setupChatSync() {
             database.ref('session_1/messages').on('child_added', (snapshot) => {
                 const message = snapshot.val();
